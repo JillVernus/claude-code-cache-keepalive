@@ -15,8 +15,10 @@
 # and stays silent while
 #   * ~/.claude/cache-keepalive/disabled.<sid>  -> this session is turned off
 #     (created by /cache-keepalive:off, cleared with the ctl script's `on`)
-# It stops pinging once the session has been idle for CCKA_MAX_IDLE_SECONDS
-# (default 12h); real activity resets that.
+# It stops pinging once no human prompt has arrived for CCKA_MAX_IDLE_SECONDS
+# (default 12h), measured from last_prompt.<sid>: every ping is a turn whose
+# Stop resets the heartbeat, so the heartbeat alone would never get there.
+# A new prompt resets that; so does starting or resuming the session.
 #
 # Per-session: heartbeat, ping marker and log are keyed by the Claude Code
 # session id (CLAUDE_SESSION_ID), so concurrent sessions keep independent
@@ -31,7 +33,8 @@
 # Config (env first, else ~/.claude/cache-keepalive/config, else default):
 #   CCKA_IDLE_SECONDS       idle before pinging        (default 3000 = 50 min)
 #   CCKA_TICK_SECONDS       poll granularity           (default 300 = 5 min)
-#   CCKA_MAX_IDLE_SECONDS   stop pinging past this idle (default 43200 = 12h; 0 = never)
+#   CCKA_MAX_IDLE_SECONDS   stop pinging after this long without a prompt
+#                           (default 43200 = 12h; 0 = never)
 #   CCKA_PING_TEXT          stdout line delivered to Claude
 #                           (default: asks for a one-word "ok" reply)
 #                           (default: a bland "reply with a single word")
@@ -87,12 +90,14 @@ bind_session() {
   safe="$1"
   if [ -n "$safe" ]; then
     HB="$STATE_DIR/last_stop.$safe"
+    PROMPTFILE="$STATE_DIR/last_prompt.$safe"
     PINGFILE="$STATE_DIR/last_ping.$safe"
     DISABLED="$STATE_DIR/disabled.$safe"
     LOG="${CCKA_LOG:-$STATE_DIR/cache-keepalive.$safe.log}"
     SESSION_LABEL="$safe"
   else
     HB="$STATE_DIR/last_stop"
+    PROMPTFILE="$STATE_DIR/last_prompt"
     PINGFILE="$STATE_DIR/last_ping"
     DISABLED="$STATE_DIR/disabled"
     LOG="${CCKA_LOG:-$STATE_DIR/cache-keepalive.log}"
@@ -163,6 +168,9 @@ fresh_heartbeat() {
   if [ $((_now - _last)) -ge "$IDLE" ]; then
     printf '%s' "$_now" > "$HB" 2>/dev/null || true
   fi
+
+  # someone just started or resumed this session: restart the max-idle clock
+  printf '%s' "$_now" > "$PROMPTFILE" 2>/dev/null || true
 }
 fresh_heartbeat
 
@@ -204,15 +212,19 @@ while :; do
   since_ping_last="$(cat "$PINGFILE" 2>/dev/null || echo 0)"
   case "$since_ping_last" in ''|*[!0-9]*) since_ping_last=0 ;; esac
 
+  prompted="$(cat "$PROMPTFILE" 2>/dev/null || echo "$last")"
+  case "$prompted" in ''|*[!0-9]*) prompted="$last" ;; esac
+
   idle=$((now - last))
   since_ping=$((now - since_ping_last))
+  away=$((now - prompted))
 
   # ping only when idle enough AND we have not pinged in the last window
   # (the second condition is a guard for when a ping produced no Stop)
   if [ "$idle" -ge "$IDLE" ] && [ "$since_ping" -ge "$IDLE" ]; then
-    if [ "$MAX_IDLE" -gt 0 ] && [ "$idle" -ge "$MAX_IDLE" ]; then
+    if [ "$MAX_IDLE" -gt 0 ] && [ "$away" -ge "$MAX_IDLE" ]; then
       if [ "$capped" = 0 ]; then
-        log "idle $((idle / 3600))h exceeds max_idle; pausing pings until activity resumes"
+        log "no prompt for $((away / 3600))h, exceeds max_idle; pausing pings until a new prompt"
         capped=1
       fi
     else

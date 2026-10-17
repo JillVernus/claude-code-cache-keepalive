@@ -4,7 +4,7 @@
 
 <p>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-<a href="test.sh"><img alt="tests: 74 passing" src="https://img.shields.io/badge/tests-74%20passing-brightgreen"></a>
+<a href="test.sh"><img alt="tests: 79 passing" src="https://img.shields.io/badge/tests-79%20passing-brightgreen"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6E56CF">
 <img alt="Requires the Monitor tool" src="https://img.shields.io/badge/requires-Monitor%20tool-orange">
 </p>
@@ -211,7 +211,7 @@ visible to monitors, so use the config file or environment.)
 | --- | --- | --- |
 | `CCKA_IDLE_SECONDS` | `3000` | Idle time before pinging (50 min) |
 | `CCKA_TICK_SECONDS` | `300` | Poll granularity (5 min) |
-| `CCKA_MAX_IDLE_SECONDS` | `43200` | Stop pinging once idle exceeds this (12 h; `0` = never) |
+| `CCKA_MAX_IDLE_SECONDS` | `43200` | Stop pinging after this long without a prompt from you (12 h; `0` = never). Ping turns do not count; a new prompt, or starting/resuming the session, resets it |
 | `CCKA_PING_TEXT` | `Reply with "ok" and nothing else.` | The line delivered to Claude |
 | `CCKA_STATE_DIR` | `~/.claude/cache-keepalive` | State + log directory |
 | `CCKA_LOG` | `$CCKA_STATE_DIR/cache-keepalive.<session>.log` | Explicit log path override |
@@ -324,8 +324,9 @@ rm -rf ~/.claude/cache-keepalive          # optional: also drop state + logs
 2. **Usage.** Works on both a Pro/Max subscription and API billing. On a
    subscription the point is to avoid a full prefix re-processing (which drains
    plan usage) after an idle gap longer than the 1-hour TTL, not to cut a
-   per-token bill. Pinging stops after `CCKA_MAX_IDLE_SECONDS` (default 12 h)
-   so an abandoned session does not keep pinging.
+   per-token bill. Pinging stops once you have not sent a prompt for
+   `CCKA_MAX_IDLE_SECONDS` (default 12 h), so an abandoned session does not
+   keep pinging. The keepalive's own ping turns do not count as activity.
 3. **Multi-session.** Each session runs its own monitor and heartbeat
    (`last_stop.<session_id>`), so timers are independent. The only shared
    case is a monitor that cannot see `CLAUDE_SESSION_ID`, which falls back

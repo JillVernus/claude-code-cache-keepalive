@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/cache-keepalive-stamp.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/cache-keepalive-stamp.sh\" --prompt",
             "timeout": 10
           }
         ]

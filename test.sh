@@ -30,6 +30,9 @@ check() { # got want label
   else fail=$((fail + 1)); printf '  FAIL %s\n       got:  %s\n       want: %s\n' "$3" "$1" "$2"; fi
 }
 lines() { wc -l < "$1" 2>/dev/null | tr -d ' '; }
+prompt() { # sid  [text]  -- a UserPromptSubmit hook call
+  printf '%s' "{\"session_id\":\"$1\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"${2:-hello}\"}" | bash "$STAMP" --prompt
+}
 stamp() { # sid  [envsid]
   if [ -n "${2:-}" ]; then printf '%s' "{\"session_id\":\"$1\"}" | CLAUDE_SESSION_ID="$2" bash "$STAMP"
   else printf '%s' "{\"session_id\":\"$1\"}" | bash "$STAMP"; fi
@@ -43,6 +46,12 @@ stamp B
 check "$( [ -f "$TMP/last_stop.A" ] && echo yes || echo no )" "yes" "writes per-session heartbeat last_stop.A"
 check "$( [ -f "$TMP/last_stop.B" ] && echo yes || echo no )" "yes" "writes per-session heartbeat last_stop.B"
 check "$( [ -f "$TMP/last_stop" ] && echo yes || echo no )"   "yes" "also writes the global fallback heartbeat"
+check "$( [ -f "$TMP/last_prompt.A" ] && echo yes || echo no )" "no" "a Stop is not a prompt"
+prompt P1
+check "$( [ -f "$TMP/last_prompt.P1" ] && [ -f "$TMP/last_stop.P1" ] && echo yes || echo no )" "yes" "a typed prompt stamps last_prompt and the heartbeat"
+prompt P2 '<task-notification>\\n<task-id>x</task-id>'
+check "$( [ -f "$TMP/last_prompt.P2" ] && echo yes || echo no )" "no" "a task notification (e.g. a ping) is not a prompt"
+check "$( [ -f "$TMP/last_stop.P2" ] && echo yes || echo no )" "yes" "a task notification still stamps the heartbeat"
 t1="$(cat "$TMP/last_stop.A")"; sleep 1; stamp A; t2="$(cat "$TMP/last_stop.A")"
 check "$( [ "$t2" -ge "$t1" ] && echo yes || echo no )" "yes" "A heartbeat advances on each Stop"
 
@@ -189,10 +198,27 @@ PIDS+=($!)
 sleep 8
 n="$(wc -l < "$TMP/out.CAP" | tr -d ' ')"
 check "$( [ "$n" -ge 1 ] && [ "$n" -le 3 ] && echo yes || echo no )" "yes" "pings stop after max idle ($n pings, not ~8)"
-stamp CAP
+prompt CAP
 sleep 3
 m="$(wc -l < "$TMP/out.CAP" | tr -d ' ')"
-check "$( [ "$m" -gt "$n" ] && echo yes || echo no )" "yes" "new activity resumes pinging"
+check "$( [ "$m" -gt "$n" ] && echo yes || echo no )" "yes" "a new prompt resumes pinging"
+
+echo "-- max idle cap holds even though every ping turn stamps the heartbeat --"
+: > "$TMP/out.CAP2"
+CLAUDE_SESSION_ID=CAP2 CCKA_IDLE_SECONDS=1 CCKA_TICK_SECONDS=1 CCKA_MAX_IDLE_SECONDS=4 CCKA_PING_TEXT=PING_CAP2 bash "$MONITOR" >"$TMP/out.CAP2" 2>/dev/null &
+PIDS+=($!)
+seen=0
+for _ in $(seq 1 40); do   # 10s: answer each ping like Claude Code does
+  sleep 0.25
+  cur="$(lines "$TMP/out.CAP2")"
+  if [ "$cur" -gt "$seen" ]; then
+    seen="$cur"
+    prompt CAP2 '<task-notification>ping</task-notification>'   # UserPromptSubmit for the ping
+    stamp CAP2                                                  # its Stop
+  fi
+done
+n="$(lines "$TMP/out.CAP2")"
+check "$( [ "$n" -ge 1 ] && [ "$n" -le 3 ] && echo yes || echo no )" "yes" "ping turns do not reset the max-idle clock ($n pings in 10s; uncapped would be ~10)"
 
 echo "-- opt-out markers prevent the monitor from starting --"
 : > "$TMP/disabled"

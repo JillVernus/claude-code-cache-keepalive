@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.1.1] — make the 12 h max-idle cap actually stop pinging
+
+### Fixed
+- `CCKA_MAX_IDLE_SECONDS` never triggered. Every ping is a turn, and its
+  `Stop` (and `UserPromptSubmit`, which Claude Code also fires for task
+  notifications) reset the heartbeat the cap was measured from, so an
+  abandoned session pinged every ~50 min indefinitely; one real session pinged
+  50 times over 45 hours without a single prompt. The cap is now measured from
+  `last_prompt.<session>`, which the `UserPromptSubmit` hook (`stamp.sh
+  --prompt`) writes only for a prompt that is not a `<task-notification>`.
+  Starting or resuming a session also restarts it. The 50-minute heartbeat
+  logic is unchanged.
+
+### Tests
+- Prompt vs task-notification stamping, and a simulated session that answers
+  every ping with `UserPromptSubmit` + `Stop` still hits the cap. Tests 74 -> 79.
+
 ## [3.1.0] — keep the monitor across /resume and /clear
 
 ### Fixed

@@ -10,6 +10,11 @@
 # --bind (the SessionStart hook) it does only that; the monitor decides how
 # a started or resumed session's heartbeat begins.
 #
+# With --prompt (the UserPromptSubmit hook) it also records a human prompt in
+# last_prompt.<session>, which the monitor's max-idle cap measures from. The
+# hook also fires for task notifications -- including the keepalive's own
+# pings -- so a prompt that is a <task-notification> is not counted.
+#
 # Per-session: the heartbeat is keyed by the Claude Code session id
 # (CLAUDE_SESSION_ID, falling back to the stdin session_id), so multiple
 # concurrent sessions keep independent idle timers. A global last_stop
@@ -18,7 +23,11 @@
 set -uo pipefail
 
 BIND_ONLY=0
-[ "${1:-}" = "--bind" ] && BIND_ONLY=1
+PROMPT=0
+case "${1:-}" in
+  --bind)   BIND_ONLY=1 ;;
+  --prompt) PROMPT=1 ;;
+esac
 
 STATE_DIR="${CCKA_STATE_DIR:-$HOME/.claude/cache-keepalive}"
 mkdir -p "$STATE_DIR" 2>/dev/null || true
@@ -56,5 +65,11 @@ esac
 printf '%s' "$now" > "$STATE_DIR/last_stop.$safe" 2>/dev/null || true
 printf '%s' "$now" > "$STATE_DIR/last_stop"       2>/dev/null || true   # fallback
 printf '%s' "$safe" > "$STATE_DIR/last_session"   2>/dev/null || true
+
+if [ "$PROMPT" = 1 ] && ! printf '%s' "$input" \
+     | grep -q '"prompt"[[:space:]]*:[[:space:]]*"[[:space:]]*<task-notification>'; then
+  printf '%s' "$now" > "$STATE_DIR/last_prompt.$safe" 2>/dev/null || true
+  printf '%s' "$now" > "$STATE_DIR/last_prompt"       2>/dev/null || true   # fallback
+fi
 
 exit 0
