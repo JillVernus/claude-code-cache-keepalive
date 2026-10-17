@@ -20,6 +20,9 @@ cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill "$p" 2>/dev/null; do
 trap cleanup EXIT
 
 export CCKA_STATE_DIR="$TMP"
+# Run hermetically: inside a Claude Code session these are set, and the stamp
+# hook prefers them over the stdin session_id the tests feed it.
+unset CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID
 
 pass=0; fail=0
 check() { # got want label

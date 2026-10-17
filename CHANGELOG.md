@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Tests
+- `test.sh` unsets `CLAUDE_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` before
+  running. Inside a Claude Code session the stamp hook picked up the real
+  session id instead of the test's stdin `session_id`, failing 5 heartbeat
+  tests.
+
 ## [3.0.2] — new maintainer, new marketplace
 
 ### Changed
