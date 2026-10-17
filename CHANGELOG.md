@@ -3,13 +3,35 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [3.1.0] — keep the monitor across /resume and /clear
+
+### Fixed
+- Resuming a session no longer wakes it up. `/resume` (and `/clear`) fire
+  `SessionEnd` with reason `resume`/`clear` inside the same Claude Code
+  process; the cleanup hook killed the monitor, and Claude Code delivered its
+  "monitor ended" notification to the resumed session, which started a full
+  cold-cache turn before you typed anything. The cleanup now leaves the
+  monitor running for those reasons and stops it only on a real exit.
+- The monitor keeps working after `/resume` and `/clear`. Claude Code arms a
+  plugin monitor once per process, so after a switch none was running. A new
+  `SessionStart` hook records which session the process is showing in
+  `host.<CLAUDE_PID>`, and the monitor follows it on its next tick (its pid
+  file moves with it, so `SessionEnd` and the ctl script still find it). A
+  switch is treated like a fresh start: a stale heartbeat is reset to now, so
+  the first ping comes one idle window after the resume.
+
+### Changed
+- The per-session `disabled.<session>` marker no longer stops the monitor
+  from starting; it keeps it silent while that session is shown, so a later
+  switch to another session still gets keepalive pings.
 
 ### Tests
 - `test.sh` unsets `CLAUDE_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` before
   running. Inside a Claude Code session the stamp hook picked up the real
   session id instead of the test's stdin `session_id`, failing 5 heartbeat
-  tests.
+  tests. It also unsets `CLAUDE_PID`.
+- New coverage for the session switch on `/resume` and for pruning
+  `host.<pid>` files. Tests 60 -> 74.
 
 ## [3.0.2] — new maintainer, new marketplace
 

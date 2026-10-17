@@ -11,15 +11,22 @@
 #
 # It starts only when the user wants it:
 #   * CCKA_ENABLED=0                            -> never
-#   * ~/.claude/cache-keepalive/disabled.<sid>  -> not for this session
-#     (created by /cache-keepalive:off, cleared with the ctl script's `on`)
 #   * <project>/.claude/cache-keepalive-off     -> not for this project
-# and it stops pinging once the session has been idle for
-# CCKA_MAX_IDLE_SECONDS (default 12h); real activity resets that.
+# and stays silent while
+#   * ~/.claude/cache-keepalive/disabled.<sid>  -> this session is turned off
+#     (created by /cache-keepalive:off, cleared with the ctl script's `on`)
+# It stops pinging once the session has been idle for CCKA_MAX_IDLE_SECONDS
+# (default 12h); real activity resets that.
 #
 # Per-session: heartbeat, ping marker and log are keyed by the Claude Code
 # session id (CLAUDE_SESSION_ID), so concurrent sessions keep independent
 # idle timers. With no session id visible it falls back to shared global files.
+#
+# /resume and /clear switch sessions inside the same Claude Code process,
+# which arms a plugin monitor only once per process. So the monitor follows
+# the session the process is currently showing, recorded by the hooks in
+# host.<CLAUDE_PID>, instead of staying bound to the one it started in. A
+# switch counts like a fresh start: the first ping comes one idle window later.
 #
 # Config (env first, else ~/.claude/cache-keepalive/config, else default):
 #   CCKA_IDLE_SECONDS       idle before pinging        (default 3000 = 50 min)
@@ -60,22 +67,39 @@ while [ $# -gt 0 ]; do
   shift || true
 done
 
+# the session this Claude Code process is showing now (written by the hooks),
+# else the one we were started for
+HOSTFILE=""
+case "${CLAUDE_PID:-}" in
+  ''|*[!0-9]*) : ;;
+  *) HOSTFILE="$STATE_DIR/host.$CLAUDE_PID" ;;
+esac
+
 # per-session key (must match cache-keepalive-stamp.sh)
-key="${SESSION_ARG:-${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}}"
-safe="$(printf '%s' "$key" | tr -c 'A-Za-z0-9._-' '_')"
-if [ -n "$safe" ]; then
-  HB="$STATE_DIR/last_stop.$safe"
-  PINGFILE="$STATE_DIR/last_ping.$safe"
-  DISABLED="$STATE_DIR/disabled.$safe"
-  LOG="${CCKA_LOG:-$STATE_DIR/cache-keepalive.$safe.log}"
-  SESSION_LABEL="$safe"
-else
-  HB="$STATE_DIR/last_stop"
-  PINGFILE="$STATE_DIR/last_ping"
-  DISABLED="$STATE_DIR/disabled"
-  LOG="${CCKA_LOG:-$STATE_DIR/cache-keepalive.log}"
-  SESSION_LABEL="global"
-fi
+current_session() {
+  local k=""
+  [ -n "$HOSTFILE" ] && k="$(cat "$HOSTFILE" 2>/dev/null || true)"
+  [ -n "$k" ] || k="${SESSION_ARG:-${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}}"
+  printf '%s' "$k" | tr -c 'A-Za-z0-9._-' '_'
+}
+
+bind_session() {
+  safe="$1"
+  if [ -n "$safe" ]; then
+    HB="$STATE_DIR/last_stop.$safe"
+    PINGFILE="$STATE_DIR/last_ping.$safe"
+    DISABLED="$STATE_DIR/disabled.$safe"
+    LOG="${CCKA_LOG:-$STATE_DIR/cache-keepalive.$safe.log}"
+    SESSION_LABEL="$safe"
+  else
+    HB="$STATE_DIR/last_stop"
+    PINGFILE="$STATE_DIR/last_ping"
+    DISABLED="$STATE_DIR/disabled"
+    LOG="${CCKA_LOG:-$STATE_DIR/cache-keepalive.log}"
+    SESSION_LABEL="global"
+  fi
+}
+bind_session "$(current_session)"
 
 log() { printf '[%s] [CACHE-KEEPALIVE-MONITOR] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/null || true; }
 
@@ -85,12 +109,12 @@ case "$(printf '%s' "${CCKA_ENABLED:-1}" | tr '[:upper:]' '[:lower:]')" in
   0|false|no|off) log "CCKA_ENABLED=off; not starting"; exit 0 ;;
 esac
 
-# opt-out markers (created by /cache-keepalive:off, cleared with the ctl
-# script's `on`). The global
-# one disables every session; the per-session one only this session. Checked on
-# every start, so turning it off also survives a plugin reload.
-if [ -f "$STATE_DIR/disabled" ] || [ -f "$DISABLED" ]; then
-  log "disabled marker present; not starting (run the ctl script with 'on' to re-arm)"
+# global opt-out marker (written by the ctl script's `off-all`). Checked on
+# every start, so turning it off also survives a plugin reload. The
+# per-session marker is checked on every tick instead: this process may
+# switch to another session later.
+if [ -f "$STATE_DIR/disabled" ]; then
+  log "global disabled marker present; not starting (run the ctl script with 'on-all' to re-arm)"
   exit 0
 fi
 
@@ -117,25 +141,30 @@ _cleanup() { rm -f "$PIDFILE" 2>/dev/null || true; }
 trap _cleanup EXIT
 trap '_cleanup; exit 0' INT TERM
 
-# bootstrap for this session: prefer the global heartbeat if we have none yet
-if [ ! -f "$HB" ]; then
-  if [ -f "$STATE_DIR/last_stop" ]; then
-    cp "$STATE_DIR/last_stop" "$HB" 2>/dev/null || date +%s > "$HB" 2>/dev/null || true
-  else
-    date +%s > "$HB" 2>/dev/null || true
-  fi
-fi
-
 # A session that is just starting/resuming is "active now". If the stored
 # heartbeat is already older than the idle window (e.g. a session resumed
 # days later, or a monitor restarted long after the last activity), reset it
 # to now so we do not fire a pointless ping with a cold cache on startup.
-_now="$(date +%s)"
-_last="$(cat "$HB" 2>/dev/null || echo "$_now")"
-case "$_last" in ''|*[!0-9]*) _last="$_now" ;; esac
-if [ $((_now - _last)) -ge "$IDLE" ]; then
-  printf '%s' "$_now" > "$HB" 2>/dev/null || true
-fi
+# Run on startup and again whenever we follow a session switch.
+fresh_heartbeat() {
+  # bootstrap for this session: prefer the global heartbeat if we have none yet
+  if [ ! -f "$HB" ]; then
+    if [ -f "$STATE_DIR/last_stop" ]; then
+      cp "$STATE_DIR/last_stop" "$HB" 2>/dev/null || date +%s > "$HB" 2>/dev/null || true
+    else
+      date +%s > "$HB" 2>/dev/null || true
+    fi
+  fi
+
+  local _now _last
+  _now="$(date +%s)"
+  _last="$(cat "$HB" 2>/dev/null || echo "$_now")"
+  case "$_last" in ''|*[!0-9]*) _last="$_now" ;; esac
+  if [ $((_now - _last)) -ge "$IDLE" ]; then
+    printf '%s' "$_now" > "$HB" 2>/dev/null || true
+  fi
+}
+fresh_heartbeat
 
 log "monitor started (session=${SESSION_LABEL} idle=${IDLE}s tick=${TICK}s max_idle=${MAX_IDLE}s hb=$(basename "$HB"))"
 
@@ -153,6 +182,21 @@ while :; do
   # `sleep` would defer the trap until the sleep finished).
   sleep "$TICK" &
   wait $! 2>/dev/null || true
+
+  # follow a /resume or /clear to the session now shown in this process
+  next="$(current_session)"
+  if [ "$next" != "$safe" ]; then
+    prev="$SESSION_LABEL"
+    [ "$(cat "$PIDFILE" 2>/dev/null)" = "$$" ] && rm -f "$PIDFILE"
+    bind_session "$next"
+    PIDFILE="$STATE_DIR/monitor.$SESSION_LABEL.pid"
+    printf '%s' "$$" > "$PIDFILE" 2>/dev/null || true
+    fresh_heartbeat
+    capped=0
+    log "following session switch (from=${prev} hb=$(basename "$HB"))"
+  fi
+
+  [ -f "$DISABLED" ] && continue
 
   now="$(date +%s)"
   last="$(cat "$HB" 2>/dev/null || echo "$now")"

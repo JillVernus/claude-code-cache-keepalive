@@ -5,7 +5,8 @@
 # Per-session state (last_stop.<session>, cache-keepalive.<session>.log,
 # monitor.<session>.pid) accumulates forever. This prunes it:
 #
-#   * dead pid files are removed;
+#   * dead pid files and host.<pid> files of exited Claude Code processes
+#     are removed;
 #   * per-session heartbeats/logs older than CCKA_RETENTION_DAYS are
 #     bundled into archive/cache-keepalive-<date>.tar.gz, bucketed by the
 #     file's last-modified date, then removed from the state dir;
@@ -77,6 +78,14 @@ for pf in "$STATE_DIR"/monitor.*.pid; do
     *cache-keepalive-monitor*) : ;;   # a live monitor owns this pid -> keep
     *) rm -f "$pf" ;;
   esac
+done
+for hf in "$STATE_DIR"/host.*; do
+  [ -f "$hf" ] || continue
+  pid="${hf##*/host.}"
+  case "$pid" in
+    ''|*[!0-9]*) rm -f "$hf"; continue ;;
+  esac
+  kill -0 "$pid" 2>/dev/null || rm -f "$hf"
 done
 
 # ---- 2) archive old per-session files, bucketed by mtime date -----------

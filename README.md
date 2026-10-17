@@ -4,7 +4,7 @@
 
 <p>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-<a href="test.sh"><img alt="tests: 60 passing" src="https://img.shields.io/badge/tests-60%20passing-brightgreen"></a>
+<a href="test.sh"><img alt="tests: 74 passing" src="https://img.shields.io/badge/tests-74%20passing-brightgreen"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6E56CF">
 <img alt="Requires the Monitor tool" src="https://img.shields.io/badge/requires-Monitor%20tool-orange">
 </p>
@@ -74,6 +74,7 @@ refresh the TTL the same way), so the cost math below may not hold.
 ## How it works
 
 ```
+session starts / resumes ─────► bind hook: host.<pid> = session   (not activity)
 turn ends (Stop) ─────────────► stamp hook: last_stop = now   (instant, non-blocking)
 you submit (UserPromptSubmit) ─► stamp hook: last_stop = now
 
@@ -104,9 +105,17 @@ activity resets it, so it never spams).
 
 The heartbeat is per session and persists on disk. When you resume a session
 after a long gap, the stored heartbeat is already older than the idle window,
-so the monitor **resets it to "now" on startup** instead of firing an
-immediate ping against a cold cache. It then behaves normally and pings only
-after a fresh idle window. (The cache is cold anyway after a few hours.)
+so the monitor **resets it to "now"** instead of firing an immediate ping
+against a cold cache. It then behaves normally and pings only after a fresh
+idle window. (The cache is cold anyway after a few hours.)
+
+`/resume` and `/clear` switch sessions inside the same Claude Code process,
+and Claude Code arms a plugin monitor only **once per process**. So the
+monitor is not tied to the session it started in. A `SessionStart` hook
+records which session the process is showing (`host.<CLAUDE_PID>`), and the
+monitor follows it on its next tick, applying the same reset. The `SessionEnd`
+cleanup leaves the monitor running when the reason is `resume` or `clear`,
+and stops it only on a real exit.
 
 Stale `monitor.<session>.pid` files are harmless: the `SessionEnd` cleanup
 only kills a pid whose command line actually matches the monitor, so a
@@ -118,7 +127,8 @@ Per-session state would otherwise accumulate forever. At session start (at
 most once per `CCKA_HOUSEKEEP_INTERVAL`), the monitor runs a housekeeping
 pass that:
 
-* deletes `monitor.<session>.pid` files whose process is gone;
+* deletes `monitor.<session>.pid` files whose process is gone, and
+  `host.<pid>` files of Claude Code processes that have exited;
 * bundles `last_stop.<session>` / `cache-keepalive.<session>.log` older than
   `CCKA_RETENTION_DAYS` (default 7) into
   `archive/cache-keepalive-<date>.tar.gz`, bucketed by the file's
@@ -347,13 +357,13 @@ rm -rf ~/.claude/cache-keepalive          # optional: also drop state + logs
 ├── .claude-plugin/marketplace.json                       # single-plugin marketplace
 ├── plugins/cache-keepalive/
 │   ├── .claude-plugin/plugin.json                        # plugin manifest
-│   ├── hooks/hooks.json                                  # Stop + UserPromptSubmit -> stamp, SessionEnd -> cleanup
+│   ├── hooks/hooks.json                                  # SessionStart -> bind, Stop + UserPromptSubmit -> stamp, SessionEnd -> cleanup
 │   ├── monitors/monitors.json                            # auto-start idle monitor
 │   ├── skills/{off,status}/SKILL.md                     # /cache-keepalive:* (manual controls)
 │   └── scripts/
 │       ├── cache-keepalive-stamp.sh                      # record last_stop
 │       ├── cache-keepalive-monitor.sh                    # idle timer -> ping
-│       ├── cache-keepalive-cleanup.sh                    # SessionEnd: stop the monitor
+│       ├── cache-keepalive-cleanup.sh                    # SessionEnd: stop the monitor (not on /resume or /clear)
 │       ├── cache-keepalive-housekeep.sh                  # archive stale state
 │       └── cache-keepalive-ctl.sh                        # status | on | off | on-all | off-all
 ├── test.sh

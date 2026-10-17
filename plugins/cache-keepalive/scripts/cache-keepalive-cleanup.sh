@@ -5,6 +5,12 @@
 # Stops this session's background monitor as part of session teardown,
 # so it is not counted as "background work still running" at exit.
 # Best-effort: reads the pid file the monitor wrote on startup.
+#
+# Not on /resume or /clear: those switch sessions inside the same Claude
+# Code process, which never re-arms the plugin monitor for the new session.
+# The monitor follows the switch instead (see host.<CLAUDE_PID>). Killing it
+# would leave the new session without one, and its "monitor ended"
+# notification would wake the resumed session for a cold-cache turn.
 # ============================================================
 set -uo pipefail
 
@@ -21,6 +27,19 @@ if [ -z "$key" ]; then
 fi
 [ -n "$key" ] || key="default"
 safe="$(printf '%s' "$key" | tr -c 'A-Za-z0-9._-' '_')"
+
+host=""
+case "${CLAUDE_PID:-}" in ''|*[!0-9]*) : ;; *) host="$CLAUDE_PID" ;; esac
+
+reason="$(printf '%s' "$input" \
+  | grep -o '"reason"[[:space:]]*:[[:space:]]*"[^"]*"' \
+  | head -n1 | sed 's/.*"\([^"]*\)"$/\1/')"
+if [ -n "$host" ]; then
+  case "$reason" in
+    resume|clear) exit 0 ;;
+  esac
+  rm -f "$STATE_DIR/host.$host"
+fi
 
 PIDFILE="$STATE_DIR/monitor.$safe.pid"
 [ -f "$PIDFILE" ] || exit 0

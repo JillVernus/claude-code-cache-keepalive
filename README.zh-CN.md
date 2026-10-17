@@ -4,7 +4,7 @@
 
 <p>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-<a href="test.sh"><img alt="tests: 60 passing" src="https://img.shields.io/badge/tests-60%20passing-brightgreen"></a>
+<a href="test.sh"><img alt="tests: 74 passing" src="https://img.shields.io/badge/tests-74%20passing-brightgreen"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6E56CF">
 <img alt="requires Monitor tool" src="https://img.shields.io/badge/requires-Monitor%20tool-orange">
 </p>
@@ -198,6 +198,8 @@ rm -rf ~/.claude/cache-keepalive          # 可选：连状态和日志一起删
    #58852，官方标记为 not planned，插件侧关不掉）。默认选项就是 *Exit anyway*，
    回车即可。
 5. 每个会话各自计时；隔很久再 resume 时会把过期的心跳重置成"现在"，不会一进来就 ping。
+   在同一个进程里用 `/resume`、`/clear` 切换会话时，monitor 不会被停掉，而是跟着切到新会话
+   （`SessionStart` hook 记录在 `host.<CLAUDE_PID>`），同样从"现在"开始计时；只有真正退出时才会停。
    会话 id 是**显式传入**的（`monitors.json` 用 `--session "${CLAUDE_SESSION_ID}"` 启动 monitor）：
    这个 token 只在"配置的命令字符串"里被替换，**并不是**导出给进程的环境变量
    （[#47018](https://github.com/anthropics/claude-code/issues/47018)）；否则所有会话都会退化成共享的 global 心跳。

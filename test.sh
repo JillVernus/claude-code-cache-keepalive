@@ -22,7 +22,7 @@ trap cleanup EXIT
 export CCKA_STATE_DIR="$TMP"
 # Run hermetically: inside a Claude Code session these are set, and the stamp
 # hook prefers them over the stdin session_id the tests feed it.
-unset CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID
+unset CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CLAUDE_PID
 
 pass=0; fail=0
 check() { # got want label
@@ -115,6 +115,40 @@ check "$(wc -l < "$TMP/out.R" | tr -d ' ')" "0" "stale heartbeat does not ping i
 sleep 4
 check "$( [ "$(wc -l < "$TMP/out.R" | tr -d ' ')" -ge 1 ] && echo yes || echo no )" "yes" "pings only after a fresh idle window"
 
+echo "-- /resume and /clear: the monitor follows the session switch --"
+FP=4242001   # a fake CLAUDE_PID shared by the hooks and the monitor
+printf '%s' "$(( $(date +%s) - 100000 ))" > "$TMP/last_stop.NEW"   # resumed days later
+printf '%s' '{"session_id":"OLD"}' | CLAUDE_PID=$FP bash "$STAMP" --bind
+check "$( [ -f "$TMP/last_stop.OLD" ] && echo yes || echo no )" "no" "SessionStart --bind does not stamp activity"
+CLAUDE_PID=$FP CCKA_IDLE_SECONDS=3 CCKA_TICK_SECONDS=1 CCKA_PING_TEXT=PING_SW bash "$MONITOR" --session OLD >"$TMP/out.SW" 2>/dev/null &
+SWPID=$!; PIDS+=("$SWPID")
+sleep 1
+check "$( [ -f "$TMP/monitor.OLD.pid" ] && echo yes || echo no )" "yes" "monitor starts bound to OLD"
+printf '%s' '{"session_id":"OLD","reason":"resume"}' | CLAUDE_PID=$FP bash "$CLEANUP"
+check "$(kill -0 "$SWPID" 2>/dev/null && echo alive || echo dead)" "alive" "SessionEnd(reason=resume) leaves the monitor running"
+printf '%s' '{"session_id":"NEW"}' | CLAUDE_PID=$FP bash "$STAMP" --bind
+check "$(cat "$TMP/host.$FP" 2>/dev/null)" "NEW" "SessionStart records the session this process now shows"
+check "$( [ -f "$TMP/monitor.NEW.pid" ] && [ ! -f "$TMP/monitor.OLD.pid" ] && echo yes || echo no )" "yes" "pid file moves to the new session"
+sleep 2
+check "$(wc -l < "$TMP/out.SW" | tr -d ' ')" "0" "no immediate ping after /resume (stale heartbeat reset)"
+check "$(grep -c 'following session switch' "$TMP/cache-keepalive.NEW.log" 2>/dev/null)" "1" "monitor logs the switch to the new session's log"
+sleep 4
+check "$( [ "$(wc -l < "$TMP/out.SW" | tr -d ' ')" -ge 1 ] && echo yes || echo no )" "yes" "resumed session pings after a fresh idle window"
+check "$(grep -c 'emitting keepalive' "$TMP/cache-keepalive.NEW.log" 2>/dev/null | awk '{print ($1 >= 1) ? "yes" : "no"}')" "yes" "the ping is for the new session"
+: > "$TMP/disabled.NEW"
+sleep 1; n_sw="$(wc -l < "$TMP/out.SW" | tr -d ' ')"; sleep 4
+check "$(wc -l < "$TMP/out.SW" | tr -d ' ')" "$n_sw" "per-session marker silences the followed session"
+rm -f "$TMP/disabled.NEW"
+printf '%s' '{"session_id":"NEW","reason":"prompt_input_exit"}' | CLAUDE_PID=$FP bash "$CLEANUP"
+swgone=no
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  s="$(awk '{print $3}' /proc/$SWPID/stat 2>/dev/null)"
+  if [ -z "$s" ] || [ "$s" = "Z" ]; then swgone=yes; break; fi
+  sleep 0.2
+done
+check "$swgone" "yes" "a real exit still stops the monitor"
+check "$( [ -f "$TMP/host.$FP" ] && echo yes || echo no )" "no" "a real exit removes the host file"
+
 echo "-- cleanup must not kill a reused pid --"
 sleep 60 &
 DUMMY=$!; PIDS+=("$DUMMY")
@@ -132,6 +166,8 @@ printf 'x' > "$HK/last_stop.NEW"
 printf 'x' > "$HK/last_stop.CUR"
 printf 'cfg' > "$HK/config"
 printf '999999' > "$HK/monitor.DEAD.pid"        # dead pid
+printf 'X' > "$HK/host.999999"                   # exited Claude Code process
+printf 'X' > "$HK/host.$$"                       # live process
 touch -t 202001010000 "$HK/last_stop.OLD" "$HK/cache-keepalive.OLD.log" "$HK/last_stop.CUR"
 CLAUDE_SESSION_ID=CUR CCKA_STATE_DIR="$HK" CCKA_RETENTION_DAYS=7 CCKA_HOUSEKEEP_INTERVAL=0 bash "$HOUSEKEEP"
 check "$( [ -f "$HK/last_stop.OLD" ] && echo yes || echo no )" "no" "old heartbeat archived away"
@@ -140,6 +176,8 @@ check "$( [ -f "$HK/last_stop.NEW" ] && echo yes || echo no )" "yes" "recent fil
 check "$( [ -f "$HK/last_stop.CUR" ] && echo yes || echo no )" "yes" "current session's file kept"
 check "$( [ -f "$HK/config" ] && echo yes || echo no )" "yes" "config kept"
 check "$( [ -f "$HK/monitor.DEAD.pid" ] && echo yes || echo no )" "no" "dead pid file removed"
+check "$( [ -f "$HK/host.999999" ] && echo yes || echo no )" "no" "host file of an exited process removed"
+check "$( [ -f "$HK/host.$$" ] && echo yes || echo no )" "yes" "host file of a live process kept"
 arch="$HK/archive/cache-keepalive-2020-01-01.tar.gz"
 check "$( [ -f "$arch" ] && echo yes || echo no )" "yes" "dated archive created"
 check "$(tar -tzf "$arch" 2>/dev/null | grep -c -E 'last_stop.OLD|cache-keepalive.OLD.log')" "2" "archive contains the old files"
@@ -233,7 +271,7 @@ check "$( [ -f "$TMP/disabled" ] && echo yes || echo no )" "no" "off does NOT wr
 # a session carrying the marker must not auto-start on a later (re)launch
 CLAUDE_SESSION_ID=S1 CCKA_IDLE_SECONDS=1 CCKA_TICK_SECONDS=1 bash "$MONITOR" >"$TMP/out.S1b" 2>/dev/null &
 PIDS+=($!); sleep 2
-check "$(wc -l < "$TMP/out.S1b" | tr -d ' ')" "0" "per-session marker keeps that session's monitor from starting"
+check "$(wc -l < "$TMP/out.S1b" | tr -d ' ')" "0" "per-session marker keeps that session's monitor silent"
 
 # without any session env, target the last session that stamped activity
 printf '%s' S1 > "$TMP/last_session"
