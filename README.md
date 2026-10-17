@@ -94,10 +94,18 @@ pinged; only a genuinely idle one is.
 **Per-session:** each session starts its own monitor, and the heartbeat/log
 are keyed by the Claude Code session id, so concurrent sessions keep
 **independent** idle timers — activity in session A does not postpone the ping
-for an idle session B. The id is handed over explicitly (`monitors.json` runs the
-monitor with `--session "${CLAUDE_SESSION_ID}"`), because Claude Code substitutes
-that token inside a configured command string but does **not** export it to the
-process environment ([anthropics/claude-code#47018](https://github.com/anthropics/claude-code/issues/47018)).
+for an idle session B. The monitor resolves the session id in this order:
+
+1. `host.<CLAUDE_PID>`, written by the hooks: the session this Claude Code
+   process is showing now, so it stays right after `/resume` and `/clear`;
+2. `--session "${CLAUDE_SESSION_ID}"` from `monitors.json`. Older Claude Code
+   versions substitute that token in the command string; current ones
+   (2.1.302 checked) pass it through to the shell, where the variable is not
+   set ([anthropics/claude-code#47018](https://github.com/anthropics/claude-code/issues/47018)),
+   so it arrives empty;
+3. `CLAUDE_CODE_SESSION_ID` from the environment (the session the monitor
+   was started for).
+
 If no id is visible the monitor falls back to the shared `last_stop` file (any
 activity resets it, so it never spams).
 

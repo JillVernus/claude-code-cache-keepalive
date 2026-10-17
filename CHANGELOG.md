@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Docs
+- Correct how the monitor finds its session id. Current Claude Code (2.1.302
+  checked) does not substitute `${CLAUDE_SESSION_ID}` in `monitors.json`; the
+  monitor gets `--session ""` and relies on `host.<CLAUDE_PID>` and the
+  env's `CLAUDE_CODE_SESSION_ID`. The README now lists the lookup order.
+
 ## [3.1.2] — test.sh no longer kills your real monitors
 
 ### Fixed

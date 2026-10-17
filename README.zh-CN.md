@@ -200,9 +200,10 @@ rm -rf ~/.claude/cache-keepalive          # 可选：连状态和日志一起删
 5. 每个会话各自计时；隔很久再 resume 时会把过期的心跳重置成"现在"，不会一进来就 ping。
    在同一个进程里用 `/resume`、`/clear` 切换会话时，monitor 不会被停掉，而是跟着切到新会话
    （`SessionStart` hook 记录在 `host.<CLAUDE_PID>`），同样从"现在"开始计时；只有真正退出时才会停。
-   会话 id 是**显式传入**的（`monitors.json` 用 `--session "${CLAUDE_SESSION_ID}"` 启动 monitor）：
-   这个 token 只在"配置的命令字符串"里被替换，**并不是**导出给进程的环境变量
-   （[#47018](https://github.com/anthropics/claude-code/issues/47018)）；否则所有会话都会退化成共享的 global 心跳。
+   monitor 按以下顺序确定会话 id：先看 hooks 写的 `host.<CLAUDE_PID>`（这个进程当前显示的会话，`/resume`、`/clear` 后也准确）；
+   再看 `monitors.json` 传入的 `--session "${CLAUDE_SESSION_ID}"`——旧版 Claude Code 会在命令字符串里替换这个 token，
+   新版（已在 2.1.302 确认）则原样交给 shell，而这个变量并未导出（[#47018](https://github.com/anthropics/claude-code/issues/47018)），
+   所以传进来是空的；最后是环境变量 `CLAUDE_CODE_SESSION_ID`（monitor 启动时的会话）。都拿不到才退回共享的 global 心跳。
 6. 旧的状态文件会在会话启动时按日期打包进 `archive/cache-keepalive-<日期>.tar.gz`。
 7. 你超过 `CCKA_MAX_IDLE_SECONDS`（默认 12 小时）没发消息就会停止 ping，免得晾着的会话白烧
    额度；ping 自己触发的回合不算活动。一旦你发新消息（或启动 / resume 会话）就自动恢复。

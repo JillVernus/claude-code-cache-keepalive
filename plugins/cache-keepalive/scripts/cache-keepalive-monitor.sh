@@ -58,9 +58,10 @@ if [ -f "$CFG" ]; then
   . "$CFG" 2>/dev/null || true
 fi
 
-# --session "<id>": Claude Code substitutes ${CLAUDE_SESSION_ID} inside the
-# configured monitor command, but the variable is NOT exported to the process
-# environment, so we must be told explicitly. Falls back to the env if present.
+# --session "<id>": older Claude Code versions substitute ${CLAUDE_SESSION_ID}
+# inside the configured monitor command. Current ones (2.1.302 checked) leave
+# it to the shell, where it is not set, so it arrives empty; the env's
+# CLAUDE_CODE_SESSION_ID and host.<CLAUDE_PID> cover that.
 SESSION_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
