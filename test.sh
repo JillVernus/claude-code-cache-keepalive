@@ -57,6 +57,7 @@ check "$( [ "$t2" -ge "$t1" ] && echo yes || echo no )" "yes" "A heartbeat advan
 
 echo "-- two sessions, independent idle timers (idle=3s tick=1s) --"
 : > "$TMP/out.A"; : > "$TMP/out.B"
+stamp A; stamp B   # own fresh heartbeats, so B never bootstraps from an older global one
 CLAUDE_SESSION_ID=A CCKA_IDLE_SECONDS=3 CCKA_TICK_SECONDS=1 CCKA_PING_TEXT=PING_A bash "$MONITOR" >"$TMP/out.A" 2>/dev/null &
 PIDS+=($!)
 CLAUDE_SESSION_ID=B CCKA_IDLE_SECONDS=3 CCKA_TICK_SECONDS=1 CCKA_PING_TEXT=PING_B bash "$MONITOR" >"$TMP/out.B" 2>/dev/null &
@@ -295,7 +296,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
   if [ -z "$s" ] || [ "$s" = "Z" ]; then s1gone=yes; break; fi
   sleep 0.2
 done
-check "$s1gone" "yes" "off stops this session's monitor"
+check "$s1gone" "no" "off keeps the monitor running (killing it wakes the session)"
 check "$(kill -0 "$S2PID" 2>/dev/null && echo alive || echo dead)" "alive" "off leaves other sessions running"
 check "$( [ -f "$TMP/disabled.S1" ] && echo yes || echo no )" "yes" "off writes the per-session marker"
 check "$( [ -f "$TMP/disabled" ] && echo yes || echo no )" "no" "off does NOT write the global marker"

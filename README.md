@@ -272,12 +272,12 @@ The monitor auto-starts with the session, but it does not have to:
 
 | Want | Do |
 | --- | --- |
-| Stop it right now | delete it in Claude Code's task list (`x`), or `/cache-keepalive:off` |
-| Stop it for **this session only** (default) | `/cache-keepalive:off` (per-session marker; other and new sessions unaffected) |
+| Stop it right now | delete it in Claude Code's task list (`x`) |
+| Stop pinging **this session only** (default) | `/cache-keepalive:off` (per-session marker; other and new sessions unaffected) |
 | Stop it **everywhere**, for good | `cache-keepalive-ctl.sh off-all` (global marker) |
 | Don't start it in this project | `touch <project>/.claude/cache-keepalive-off` |
 | Don't start it anywhere | `CCKA_ENABLED=0` in `~/.claude/cache-keepalive/config` |
-| Turn **this session** back on | `cache-keepalive-ctl.sh on`, then `/reload-plugins` |
+| Turn **this session** back on | `cache-keepalive-ctl.sh on` (add `/reload-plugins` only if no monitor is running) |
 | Turn **everything** back on | `cache-keepalive-ctl.sh on-all`, then `/reload-plugins` |
 | See what's running | `/cache-keepalive:status` |
 
@@ -289,12 +289,14 @@ markers (`disabled`, `disabled.<session>`, `CCKA_ENABLED`) are the single
 source of truth the monitor reads — the commands are only a convenient way to
 flip them.
 
-`/cache-keepalive:off` is session-scoped: it stops only the monitor belonging
-to the session you are in and writes
-`~/.claude/cache-keepalive/disabled.<session>`. That session id then skips
-auto-start, while every other open session and every future session keeps
-working normally — useful when you just want the current conversation to stop
-pinging. The ctl script's `on` clears it.
+`/cache-keepalive:off` is session-scoped: it writes
+`~/.claude/cache-keepalive/disabled.<session>`, and the monitor stops pinging
+while that session is shown. The monitor itself keeps running, silently:
+killing it would make Claude Code deliver a "monitor ended" notification,
+which wakes the session for one more full turn. Every other open session and
+every future session keeps working normally — useful when you just want the
+current conversation to stop pinging. The ctl script's `on` clears it and
+pings resume.
 
 `cache-keepalive-ctl.sh off-all` is the blanket switch: it stops every monitor
 (on Linux, every one using the same `CCKA_STATE_DIR`) and writes `~/.claude/cache-keepalive/disabled`. The monitor checks that global

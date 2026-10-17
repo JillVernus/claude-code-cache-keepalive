@@ -142,12 +142,12 @@ Monitor 会随会话自动启动，但你可以让它不启动、也可以随时
 
 | 想要 | 怎么做 |
 | --- | --- |
-| 立刻停掉 | 在 Claude Code 的任务列表里按 `x` 删除，或 `/cache-keepalive:off` |
-| **只关掉当前会话**（默认） | `/cache-keepalive:off`（写 per-session 标记，其他会话和以后的新会话都不受影响） |
+| 立刻停掉 | 在 Claude Code 的任务列表里按 `x` 删除 |
+| **只让当前会话不再 ping**（默认） | `/cache-keepalive:off`（写 per-session 标记，其他会话和以后的新会话都不受影响） |
 | **全部关掉**，并且保持关闭 | `cache-keepalive-ctl.sh off-all`（会写一个全局标记） |
 | 这个项目不要启动 | `touch <项目>/.claude/cache-keepalive-off` |
 | 哪儿都不要启动 | 在 `~/.claude/cache-keepalive/config` 里写 `CCKA_ENABLED=0` |
-| **只重新打开当前会话** | `cache-keepalive-ctl.sh on`，然后 `/reload-plugins` |
+| **只重新打开当前会话** | `cache-keepalive-ctl.sh on`（只有在没有 monitor 在跑时才需要再 `/reload-plugins`） |
 | **全部重新打开** | `cache-keepalive-ctl.sh on-all`，然后 `/reload-plugins` |
 | 看现在在不在跑 | `/cache-keepalive:status` |
 
@@ -157,10 +157,11 @@ Monitor 会随会话自动启动，但你可以让它不启动、也可以随时
 monitor 读的就是这些标记（`disabled`、`disabled.<会话 id>`、`CCKA_ENABLED`），
 它们才是**唯一真源**，命令只是改起来方便。
 
-`/cache-keepalive:off` 是**会话级**的：它只停掉**你当前所在会话**的那个 monitor，
-并写入 `~/.claude/cache-keepalive/disabled.<会话 id>`。于是这个会话 id 之后不会
-再自动启动 monitor，而其他开着的会话、以及以后新开的会话都照常工作——适合
-“只想让当前这段对话别再 ping”的情况。用 ctl 脚本的 `on` 可以解除。
+`/cache-keepalive:off` 是**会话级**的：它写入 `~/.claude/cache-keepalive/disabled.<会话 id>`，
+monitor 在显示这个会话时就不再 ping。monitor 进程本身会继续安静地运行：如果把它杀掉，
+Claude Code 会送来一条“monitor 已结束”的通知，反而让会话再多跑一个完整回合。
+其他开着的会话、以及以后新开的会话都照常工作——适合“只想让当前这段对话别再 ping”的情况。
+用 ctl 脚本的 `on` 可以解除，ping 随即恢复。
 
 `cache-keepalive-ctl.sh off-all` 是**全局**开关：停掉所有 monitor（Linux 上限于使用同一个 `CCKA_STATE_DIR` 的），并写入
 `~/.claude/cache-keepalive/disabled`。monitor 在**每次启动**时都会先看这个标记，

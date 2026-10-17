@@ -3,7 +3,20 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [3.1.3] — turning a session off no longer wakes it
+
+### Changed
+- `/cache-keepalive:off` (`cache-keepalive-ctl.sh off`) no longer kills the
+  monitor; it only writes the per-session marker, which the monitor has
+  honoured on every tick since 3.1.0. Killing it made Claude Code deliver a
+  "monitor ended" notification that woke the session for one more full turn,
+  the opposite of what turning it off is for. `on` now resumes pings without
+  `/reload-plugins`.
+
+### Tests
+- `off` now asserts the monitor keeps running. The two-session timer test
+  stamps both sessions before starting their monitors; B could otherwise
+  bootstrap from a seconds-old global heartbeat and ping on its first tick.
 
 ### Docs
 - Correct how the monitor finds its session id. Current Claude Code (2.1.302

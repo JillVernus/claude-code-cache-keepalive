@@ -5,9 +5,11 @@
 # Manual control.
 #
 #   on / off    act on THIS session only (the default):
-#                 off  stop this session's monitor and write
-#                      ~/.claude/cache-keepalive/disabled.<session>
-#                 on   clear this session's marker
+#                 off  write ~/.claude/cache-keepalive/disabled.<session>;
+#                      the monitor stays running but silent for this
+#                      session (killing it would make Claude Code wake the
+#                      session with a "monitor ended" notification turn)
+#                 on   clear this session's marker; pings resume
 #               Other running sessions and all future sessions are untouched.
 #   on-all /    act on EVERY session:
 #   off-all       off-all  stop every monitor and write the GLOBAL marker
@@ -71,29 +73,6 @@ monitor_pids() {
   fi
 }
 
-# Kill only the process named by a pid file, and only if it really is our
-# monitor (a reused pid must never be killed).
-stop_pidfile() {
-  local pf="$1" pid cmd
-  [ -f "$pf" ] || return 0
-  pid="$(cat "$pf" 2>/dev/null || true)"
-  case "$pid" in
-    ''|*[!0-9]*) rm -f "$pf"; return 0 ;;
-  esac
-  cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-  case "$cmd" in
-    *cache-keepalive-monitor*)
-      kill "$pid" 2>/dev/null || true
-      for _ in 1 2 3 4 5; do
-        kill -0 "$pid" 2>/dev/null || break
-        sleep 0.2
-      done
-      kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
-      ;;
-  esac
-  rm -f "$pf"
-}
-
 arm_hint() {
   echo "  /reload-plugins   (the plugin monitor restarts automatically)"
   echo "  or the Monitor tool: Monitor(command=\"bash $HERE/cache-keepalive-monitor.sh\", persistent=true)"
@@ -155,10 +134,10 @@ case "${1:-status}" in
   off)
     mkdir -p "$STATE_DIR" 2>/dev/null || true
     : > "$SESSION_OFF"
-    stop_pidfile "$SESSION_PIDFILE"
     echo "cache-keepalive: OFF for this session only (session=$safe)"
-    echo "other running sessions are untouched; only this session id will skip"
-    echo "auto-start. Re-arm by running this script with 'on' (then /reload-plugins)."
+    echo "no more pings for this session; the monitor stays running but silent,"
+    echo "so stopping it does not wake the session. Other sessions are untouched."
+    echo "Re-arm by running this script with 'on'."
     ;;
 
   on-all)
