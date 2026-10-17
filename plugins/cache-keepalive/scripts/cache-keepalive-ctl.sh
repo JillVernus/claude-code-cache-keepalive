@@ -46,9 +46,10 @@ SESSION_PIDFILE="$STATE_DIR/monitor.$safe.pid"
 # Only real monitor processes: match on argv precisely. `pgrep -f` matches the
 # whole command line, so an editor or a shell whose command merely *mentions*
 # the script name would be matched too -- and off-all kills whatever this
-# returns.
+# returns. With /proc, also only monitors that use this state dir, so a run
+# with its own CCKA_STATE_DIR (test.sh) never touches the user's monitors.
 monitor_pids() {
-  local p arg found
+  local p arg found sd
   if [ -d /proc ]; then
     for p in /proc/[0-9]*; do
       [ -r "$p/cmdline" ] || continue
@@ -58,7 +59,9 @@ monitor_pids() {
           */cache-keepalive-monitor.sh|cache-keepalive-monitor.sh) found=1; break ;;
         esac
       done < <(tr '\0' '\n' < "$p/cmdline" 2>/dev/null)
-      [ "$found" = 1 ] && basename "$p"
+      [ "$found" = 1 ] || continue
+      sd="$(tr '\0' '\n' < "$p/environ" 2>/dev/null | sed -n 's/^CCKA_STATE_DIR=//p' | head -n1)"
+      [ "${sd:-$HOME/.claude/cache-keepalive}" = "$STATE_DIR" ] && basename "$p"
     done
   else
     # no /proc (BSD/macOS): a shell whose *argument* is the script

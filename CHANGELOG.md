@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.1.2] — test.sh no longer kills your real monitors
+
+### Fixed
+- `cache-keepalive-ctl.sh off-all` and `status` found monitors by scanning
+  every process on the machine, so `test.sh` (which runs `off-all` against
+  its own throwaway `CCKA_STATE_DIR`) killed the user's real monitors; Claude
+  Code then woke each affected session with a "monitor ended" notification.
+  On Linux the scan now only matches monitors whose `CCKA_STATE_DIR` (read
+  from `/proc/<pid>/environ`, default `~/.claude/cache-keepalive`) is the
+  ctl's own. With the default state dir nothing changes for normal use.
+
+### Tests
+- `off-all` leaves a monitor of another state dir running. Tests 79 -> 80.
+
 ## [3.1.1] — make the 12 h max-idle cap actually stop pinging
 
 ### Fixed

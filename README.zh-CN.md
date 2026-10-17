@@ -4,7 +4,7 @@
 
 <p>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-<a href="test.sh"><img alt="tests: 79 passing" src="https://img.shields.io/badge/tests-79%20passing-brightgreen"></a>
+<a href="test.sh"><img alt="tests: 80 passing" src="https://img.shields.io/badge/tests-80%20passing-brightgreen"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6E56CF">
 <img alt="requires Monitor tool" src="https://img.shields.io/badge/requires-Monitor%20tool-orange">
 </p>
@@ -162,7 +162,7 @@ monitor 读的就是这些标记（`disabled`、`disabled.<会话 id>`、`CCKA_E
 再自动启动 monitor，而其他开着的会话、以及以后新开的会话都照常工作——适合
 “只想让当前这段对话别再 ping”的情况。用 ctl 脚本的 `on` 可以解除。
 
-`cache-keepalive-ctl.sh off-all` 是**全局**开关：停掉所有 monitor，并写入
+`cache-keepalive-ctl.sh off-all` 是**全局**开关：停掉所有 monitor（Linux 上限于使用同一个 `CCKA_STATE_DIR` 的），并写入
 `~/.claude/cache-keepalive/disabled`。monitor 在**每次启动**时都会先看这个标记，
 所以之后再 `/reload-plugins`、或者开新会话，都**不会偷偷把它带回来**。
 `on-all` 会同时清掉全局标记和所有 per-session 标记。

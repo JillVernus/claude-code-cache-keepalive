@@ -4,7 +4,7 @@
 
 <p>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-<a href="test.sh"><img alt="tests: 79 passing" src="https://img.shields.io/badge/tests-79%20passing-brightgreen"></a>
+<a href="test.sh"><img alt="tests: 80 passing" src="https://img.shields.io/badge/tests-80%20passing-brightgreen"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6E56CF">
 <img alt="Requires the Monitor tool" src="https://img.shields.io/badge/requires-Monitor%20tool-orange">
 </p>
@@ -289,7 +289,7 @@ working normally — useful when you just want the current conversation to stop
 pinging. The ctl script's `on` clears it.
 
 `cache-keepalive-ctl.sh off-all` is the blanket switch: it stops every monitor
-and writes `~/.claude/cache-keepalive/disabled`. The monitor checks that global
+(on Linux, every one using the same `CCKA_STATE_DIR`) and writes `~/.claude/cache-keepalive/disabled`. The monitor checks that global
 marker on **every** start, so a later `/reload-plugins` or a brand new session
 will *not* silently bring it back. `on-all` clears the global marker and every
 per-session marker.

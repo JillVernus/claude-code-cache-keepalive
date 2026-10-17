@@ -261,6 +261,10 @@ case "$(bash "$CTL" status 2>/dev/null)" in
   *) decoy_listed=no ;;
 esac
 check "$decoy_listed" "no" "status does not list a decoy that merely mentions the script name"
+# a monitor of another install (its own state dir), e.g. the user's real one
+mkdir -p "$TMP/elsewhere"
+CCKA_STATE_DIR="$TMP/elsewhere" CLAUDE_SESSION_ID=EL CCKA_IDLE_SECONDS=300 CCKA_TICK_SECONDS=300 bash "$MONITOR" >/dev/null 2>&1 &
+ELPID=$!; PIDS+=("$ELPID"); sleep 1
 CLAUDE_SESSION_ID=H bash "$CTL" off-all >/dev/null
 hgone=no
 for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -270,6 +274,8 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 done
 check "$hgone" "yes" "ctl off-all stops the monitor"
 check "$(kill -0 "$DECOY" 2>/dev/null && echo alive || echo dead)" "alive" "off-all does not kill an unrelated process"
+check "$(kill -0 "$ELPID" 2>/dev/null && echo alive || echo dead)" "alive" "off-all leaves monitors of another state dir alone"
+kill "$ELPID" 2>/dev/null || true
 kill "$DECOY" 2>/dev/null || true
 check "$( [ -f "$TMP/disabled" ] && echo yes || echo no )" "yes" "ctl off-all writes the global marker"
 CLAUDE_SESSION_ID=H bash "$CTL" on-all >/dev/null
