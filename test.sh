@@ -7,6 +7,12 @@
 # ============================================================
 set -uo pipefail
 
+# the process checks read /proc, and ctl's state-dir scoping needs it
+if [ ! -d /proc ]; then
+  echo "test.sh needs Linux (/proc)" >&2
+  exit 2
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAMP="$HERE/plugins/cache-keepalive/scripts/cache-keepalive-stamp.sh"
 MONITOR="$HERE/plugins/cache-keepalive/scripts/cache-keepalive-monitor.sh"
@@ -19,10 +25,12 @@ PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill "$p" 2>/dev/null; done; sleep 0.2; rm -rf "$TMP"; }
 trap cleanup EXIT
 
-export CCKA_STATE_DIR="$TMP"
 # Run hermetically: inside a Claude Code session these are set, and the stamp
-# hook prefers them over the stdin session_id the tests feed it.
-unset CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CLAUDE_PID
+# hook prefers them over the stdin session_id the tests feed it; a project
+# opt-out or any exported CCKA_* setting would change every monitor below.
+unset CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CLAUDE_PID CLAUDE_PROJECT_DIR
+for v in $(compgen -v CCKA_); do unset "$v"; done
+export CCKA_STATE_DIR="$TMP"
 
 pass=0; fail=0
 check() { # got want label
@@ -53,7 +61,7 @@ prompt P2 '<task-notification>\\n<task-id>x</task-id>'
 check "$( [ -f "$TMP/last_prompt.P2" ] && echo yes || echo no )" "no" "a task notification (e.g. a ping) is not a prompt"
 check "$( [ -f "$TMP/last_stop.P2" ] && echo yes || echo no )" "yes" "a task notification still stamps the heartbeat"
 t1="$(cat "$TMP/last_stop.A")"; sleep 1; stamp A; t2="$(cat "$TMP/last_stop.A")"
-check "$( [ "$t2" -ge "$t1" ] && echo yes || echo no )" "yes" "A heartbeat advances on each Stop"
+check "$( [ "$t2" -gt "$t1" ] && echo yes || echo no )" "yes" "A heartbeat advances on each Stop"
 
 echo "-- two sessions, independent idle timers (idle=3s tick=1s) --"
 : > "$TMP/out.A"; : > "$TMP/out.B"
@@ -74,7 +82,7 @@ echo "-- global fallback (no session id visible) --"
 stamp G                              # stdin session_id, no env -> global monitor watches last_stop
 tA="$(cat "$TMP/last_stop")"
 sleep 1; stamp G
-check "$( [ "$(cat "$TMP/last_stop")" -ge "$tA" ] && echo yes || echo no )" "yes" "global heartbeat advances without a session env"
+check "$( [ "$(cat "$TMP/last_stop")" -gt "$tA" ] && echo yes || echo no )" "yes" "global heartbeat advances without a session env"
 CLAUDE_SESSION_ID= CLAUDE_CODE_SESSION_ID= CCKA_IDLE_SECONDS=1 CCKA_TICK_SECONDS=1 bash "$MONITOR" >"$TMP/out.global" 2>/dev/null &
 PIDS+=($!)
 sleep 3
@@ -159,6 +167,16 @@ done
 check "$swgone" "yes" "a real exit still stops the monitor"
 check "$( [ -f "$TMP/host.$FP" ] && echo yes || echo no )" "no" "a real exit removes the host file"
 
+echo "-- two monitors for one session: the pid file stays with the live one --"
+CLAUDE_SESSION_ID=DUP CCKA_IDLE_SECONDS=300 CCKA_TICK_SECONDS=300 bash "$MONITOR" >/dev/null 2>&1 &
+D1=$!; PIDS+=("$D1"); sleep 0.5
+CLAUDE_SESSION_ID=DUP CCKA_IDLE_SECONDS=300 CCKA_TICK_SECONDS=300 bash "$MONITOR" >/dev/null 2>&1 &
+D2=$!; PIDS+=("$D2"); sleep 0.5
+kill "$D1" 2>/dev/null; sleep 0.5
+check "$(cat "$TMP/monitor.DUP.pid" 2>/dev/null)" "$D2" "an exiting monitor leaves another's pid file alone"
+kill "$D2" 2>/dev/null; sleep 0.5
+check "$( [ -f "$TMP/monitor.DUP.pid" ] && echo yes || echo no )" "no" "the owner removes its pid file on exit"
+
 echo "-- cleanup must not kill a reused pid --"
 sleep 60 &
 DUMMY=$!; PIDS+=("$DUMMY")
@@ -191,6 +209,21 @@ check "$( [ -f "$HK/host.$$" ] && echo yes || echo no )" "yes" "host file of a l
 arch="$HK/archive/cache-keepalive-2020-01-01.tar.gz"
 check "$( [ -f "$arch" ] && echo yes || echo no )" "yes" "dated archive created"
 check "$(tar -tzf "$arch" 2>/dev/null | grep -c -E 'last_stop.OLD|cache-keepalive.OLD.log')" "2" "archive contains the old files"
+
+# a later run for the same date bucket: the newer copy wins the merge
+printf 'newer' > "$HK/cache-keepalive.OLD.log"
+touch -t 202001010000 "$HK/cache-keepalive.OLD.log"
+CLAUDE_SESSION_ID=CUR CCKA_STATE_DIR="$HK" CCKA_RETENTION_DAYS=7 CCKA_HOUSEKEEP_INTERVAL=0 bash "$HOUSEKEEP"
+check "$(tar -xzOf "$arch" ./cache-keepalive.OLD.log 2>/dev/null)" "newer" "merging into an existing archive keeps the newer copy"
+check "$(tar -tzf "$arch" 2>/dev/null | grep -c 'last_stop.OLD')" "1" "merging keeps the files already archived"
+
+# the archive cannot be written: nothing may be lost
+HK2="$TMP/hk2"; mkdir -p "$HK2"
+printf 'keep me' > "$HK2/last_stop.LOST"
+touch -t 202001010000 "$HK2/last_stop.LOST"
+: > "$TMP/not-a-dir"
+CCKA_STATE_DIR="$HK2" CCKA_ARCHIVE_DIR="$TMP/not-a-dir" CCKA_RETENTION_DAYS=7 CCKA_HOUSEKEEP_INTERVAL=0 bash "$HOUSEKEEP"
+check "$(cat "$HK2/last_stop.LOST" 2>/dev/null)" "keep me" "a failed archive write keeps the original files"
 
 echo "-- max idle cap: pinging stops on an abandoned session --"
 : > "$TMP/out.CAP"
@@ -251,8 +284,8 @@ sleep 3
 check "$( [ "$(wc -l < "$TMP/out.S9" | tr -d ' ')" -ge 1 ] && echo yes || echo no )" "yes" "--session pings from its own heartbeat"
 
 echo "-- ctl off-all/on-all (every session) --"
-# a decoy whose command line merely mentions the script name
-bash -c 'sleep 30 # cache-keepalive-monitor.sh' &
+# a decoy that has the script open, like an editor or pager would
+tail -f "$MONITOR" >/dev/null 2>&1 &
 DECOY=$!; PIDS+=("$DECOY")
 CLAUDE_SESSION_ID=H CCKA_IDLE_SECONDS=300 CCKA_TICK_SECONDS=300 bash "$MONITOR" >"$TMP/out.H" 2>/dev/null &
 HPID=$!; PIDS+=("$HPID"); sleep 1

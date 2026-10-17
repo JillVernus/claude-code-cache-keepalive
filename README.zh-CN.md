@@ -4,7 +4,7 @@
 
 <p>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-<a href="test.sh"><img alt="tests: 80 passing" src="https://img.shields.io/badge/tests-80%20passing-brightgreen"></a>
+<a href="test.sh"><img alt="tests: 85 passing" src="https://img.shields.io/badge/tests-85%20passing-brightgreen"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6E56CF">
 <img alt="requires Monitor tool" src="https://img.shields.io/badge/requires-Monitor%20tool-orange">
 </p>
@@ -204,10 +204,17 @@ rm -rf ~/.claude/cache-keepalive          # 可选：连状态和日志一起删
    monitor 按以下顺序确定会话 id：先看 hooks 写的 `host.<CLAUDE_PID>`（这个进程当前显示的会话，`/resume`、`/clear` 后也准确）；
    再看 `monitors.json` 传入的 `--session "${CLAUDE_SESSION_ID}"`——旧版 Claude Code 会在命令字符串里替换这个 token，
    新版（已在 2.1.302 确认）则原样交给 shell，而这个变量并未导出（[#47018](https://github.com/anthropics/claude-code/issues/47018)），
-   所以传进来是空的；最后是环境变量 `CLAUDE_CODE_SESSION_ID`（monitor 启动时的会话）。都拿不到才退回共享的 global 心跳。
+   所以传进来是空的；最后是环境变量 `CLAUDE_CODE_SESSION_ID`（monitor 启动时的会话）。都拿不到才退回共享的 global 心跳；
+   这种 monitor 不属于任何会话，`SessionEnd` 清理和 `/cache-keepalive:off` 都管不到它，只能在任务列表里删或用 `off-all`。
+   目前没有已知的 Claude Code 版本会走到这一步。
 6. 旧的状态文件会在会话启动时按日期打包进 `archive/cache-keepalive-<日期>.tar.gz`。
 7. 你超过 `CCKA_MAX_IDLE_SECONDS`（默认 12 小时）没发消息就会停止 ping，免得晾着的会话白烧
    额度；ping 自己触发的回合不算活动。一旦你发新消息（或启动 / resume 会话）就自动恢复。
+8. 在会话里 `/resume`、`/clear` 后保留 monitor，依赖 Claude Code 把 `CLAUDE_PID` 导出给 hook 和 monitor
+   （2.1.302 有）。没有这个变量时会退回旧行为：切换会话时 `SessionEnd` 清理会停掉 monitor，
+   新会话要等重启 Claude Code 才有。
+9. `off-all` / `status` 按 `CCKA_STATE_DIR` 区分 monitor 要读 `/proc/<pid>/environ`，只在 Linux 上生效；
+   macOS 上会作用于本机所有 monitor。`test.sh` 同样需要 Linux（`/proc`）。
 
 ## 相关项目
 

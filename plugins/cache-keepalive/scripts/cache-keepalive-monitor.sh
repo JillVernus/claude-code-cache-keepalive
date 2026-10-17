@@ -143,7 +143,8 @@ case "$MAX_IDLE" in ''|*[!0-9]*) MAX_IDLE=43200 ;; esac
 # record our pid so a SessionEnd hook / the ctl script can stop us
 PIDFILE="$STATE_DIR/monitor.$SESSION_LABEL.pid"
 printf '%s' "$$" > "$PIDFILE" 2>/dev/null || true
-_cleanup() { rm -f "$PIDFILE" 2>/dev/null || true; }
+# only our own: another monitor for the same session may have taken it over
+_cleanup() { [ "$(cat "$PIDFILE" 2>/dev/null)" = "$$" ] && rm -f "$PIDFILE" 2>/dev/null; return 0; }
 trap _cleanup EXIT
 trap '_cleanup; exit 0' INT TERM
 

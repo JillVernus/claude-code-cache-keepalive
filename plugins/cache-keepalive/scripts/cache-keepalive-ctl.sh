@@ -45,23 +45,23 @@ safe="$(printf '%s' "$key" | tr -c 'A-Za-z0-9._-' '_')"
 SESSION_OFF="$STATE_DIR/disabled.$safe"
 SESSION_PIDFILE="$STATE_DIR/monitor.$safe.pid"
 
-# Only real monitor processes: match on argv precisely. `pgrep -f` matches the
-# whole command line, so an editor or a shell whose command merely *mentions*
-# the script name would be matched too -- and off-all kills whatever this
-# returns. With /proc, also only monitors that use this state dir, so a run
-# with its own CCKA_STATE_DIR (test.sh) never touches the user's monitors.
+# Only real monitor processes: a shell whose first argument is the script.
+# `pgrep -f`, or any argument naming the script, would also match an editor,
+# pager or `tail -f` that has the script open -- and off-all kills whatever
+# this returns. With /proc, also only monitors that use this state dir, so a
+# run with its own CCKA_STATE_DIR (test.sh) never touches the user's monitors.
 monitor_pids() {
-  local p arg found sd
+  local p a0 a1 sd
   if [ -d /proc ]; then
     for p in /proc/[0-9]*; do
       [ -r "$p/cmdline" ] || continue
-      found=0
-      while IFS= read -r arg; do
-        case "$arg" in
-          */cache-keepalive-monitor.sh|cache-keepalive-monitor.sh) found=1; break ;;
-        esac
-      done < <(tr '\0' '\n' < "$p/cmdline" 2>/dev/null)
-      [ "$found" = 1 ] || continue
+      a0=""; a1=""
+      { IFS= read -r a0; IFS= read -r a1; } < <(tr '\0' '\n' < "$p/cmdline" 2>/dev/null)
+      case "${a0##*/}" in bash|sh|dash|zsh) : ;; *) continue ;; esac
+      case "$a1" in
+        */cache-keepalive-monitor.sh|cache-keepalive-monitor.sh) : ;;
+        *) continue ;;
+      esac
       sd="$(tr '\0' '\n' < "$p/environ" 2>/dev/null | sed -n 's/^CCKA_STATE_DIR=//p' | head -n1)"
       [ "${sd:-$HOME/.claude/cache-keepalive}" = "$STATE_DIR" ] && basename "$p"
     done

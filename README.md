@@ -4,7 +4,7 @@
 
 <p>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-<a href="test.sh"><img alt="tests: 80 passing" src="https://img.shields.io/badge/tests-80%20passing-brightgreen"></a>
+<a href="test.sh"><img alt="tests: 85 passing" src="https://img.shields.io/badge/tests-85%20passing-brightgreen"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6E56CF">
 <img alt="Requires the Monitor tool" src="https://img.shields.io/badge/requires-Monitor%20tool-orange">
 </p>
@@ -107,7 +107,10 @@ for an idle session B. The monitor resolves the session id in this order:
    was started for).
 
 If no id is visible the monitor falls back to the shared `last_stop` file (any
-activity resets it, so it never spams).
+activity resets it, so it never spams). Such a monitor belongs to no session,
+so `SessionEnd` cleanup and `/cache-keepalive:off` cannot reach it; stop it
+from the task list or with `off-all`. No Claude Code version is known to get
+here: older ones substitute `--session`, current ones export the env vars.
 
 ### Resuming a session later
 
@@ -358,6 +361,15 @@ rm -rf ~/.claude/cache-keepalive          # optional: also drop state + logs
    monitor during teardown; whether that removes the prompt depends on the
    exit ordering, so you may still see it. The default selection is
    *Exit anyway*, so a plain Enter dismisses it.
+8. **`/resume` and `/clear` need `CLAUDE_PID`.** Keeping the monitor across
+   an in-session `/resume` or `/clear` relies on Claude Code exporting
+   `CLAUDE_PID` to hooks and monitors (2.1.302 does). Without it the plugin
+   falls back to the old behaviour: the `SessionEnd` cleanup stops the
+   monitor on the switch, and the new session gets none until Claude Code is
+   restarted.
+9. **Linux-only scoping for `off-all` / `status`.** Matching monitors to a
+   `CCKA_STATE_DIR` reads `/proc/<pid>/environ`. On macOS they act on every
+   monitor on the machine. `test.sh` likewise needs Linux (`/proc`).
 
 ---
 

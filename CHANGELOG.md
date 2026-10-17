@@ -3,6 +3,45 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.1.4] — fixes from a full code review
+
+### Fixed
+- `off-all` could kill an editor. On Linux any process with an argument
+  naming `cache-keepalive-monitor.sh` (`vim`, `less`, `tail -f` on the script)
+  counted as a monitor, showed up in `status`, and was SIGKILLed by `off-all`.
+  Now only a shell (`bash`/`sh`/`dash`/`zsh`) whose first argument is the
+  script matches, as on macOS.
+- Housekeeping could lose state files. Originals were deleted as soon as they
+  were staged, before the archive was written, so a failed `tar` (disk full,
+  unwritable `CCKA_ARCHIVE_DIR`) lost them; the archive itself was also
+  rewritten in place. Originals are now removed only after their bucket's
+  archive is written to a temp file and swapped in.
+- Merging into an existing same-date archive extracted the old archive over
+  the newly staged files, so an older copy replaced the newer one. The old
+  archive is now unpacked separately and the new files are laid on top.
+- An exiting monitor removed its session's pid file even when another
+  monitor for that session had taken it over, so that one could no longer be
+  found by `SessionEnd` or `ctl`. It now removes the file only if it holds
+  its own pid.
+- The stamp hook writes `host.<CLAUDE_PID>` via a temp file and rename, so
+  the monitor never reads it half-written and briefly switches back to the
+  session it started in.
+
+### Tests
+- The decoy is now `tail -f` on the script (the old `bash -c 'sleep 30 # …'`
+  became plain `sleep 30` and tested nothing). New checks for the archive
+  merge, a failed archive write, and pid file ownership.
+- `test.sh` also clears `CLAUDE_PROJECT_DIR` and every inherited `CCKA_*`
+  variable, the heartbeat-advance checks use `-gt`, and it exits early off
+  Linux. Tests 80 -> 85.
+
+### Docs
+- Caveats for two platform limits: keeping the monitor across `/resume` and
+  `/clear` needs `CLAUDE_PID` from Claude Code, and `off-all` / `status` (and
+  `test.sh`) scope to a state dir only on Linux. A monitor with no session id
+  at all cannot be reached by `SessionEnd` or `off`; no known Claude Code
+  version gets there.
+
 ## [3.1.3] — turning a session off no longer wakes it
 
 ### Changed

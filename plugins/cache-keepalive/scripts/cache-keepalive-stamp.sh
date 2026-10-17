@@ -51,7 +51,9 @@ case "${CLAUDE_PID:-}" in
     hostfile="$STATE_DIR/host.$CLAUDE_PID"
     prev="$(cat "$hostfile" 2>/dev/null || true)"
     if [ "$prev" != "$safe" ]; then
-      printf '%s' "$safe" > "$hostfile" 2>/dev/null || true
+      # write-then-rename, so the monitor never reads a half-written file
+      tmp="$STATE_DIR/.host.$CLAUDE_PID.$$"
+      printf '%s' "$safe" > "$tmp" 2>/dev/null && mv -f "$tmp" "$hostfile" 2>/dev/null || rm -f "$tmp"
       # hand the running monitor's pid file to the new session, so the
       # SessionEnd cleanup and the ctl script find it under the current id
       if [ -n "$prev" ] && [ -f "$STATE_DIR/monitor.$prev.pid" ]; then

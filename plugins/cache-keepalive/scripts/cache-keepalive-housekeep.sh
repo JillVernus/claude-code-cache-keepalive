@@ -92,7 +92,9 @@ done
 stage_root="$(mktemp -d)"
 trap 'rm -rf "$stage_root"' EXIT
 
-found=0
+# Originals are removed only after their bucket's archive has been written,
+# so a failed tar (disk full, unwritable archive dir) loses nothing.
+staged=0
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   base="$(basename "$f")"
@@ -111,8 +113,8 @@ while IFS= read -r f; do
   d="$(mdate_of "$m")"
   mkdir -p "$stage_root/$d" 2>/dev/null || continue
   if cp -p "$f" "$stage_root/$d/" 2>/dev/null; then
-    rm -f "$f"
-    found=$((found + 1))
+    printf '%s\n' "$f" >> "$stage_root/$d.list"
+    staged=$((staged + 1))
   fi
 done < <(find "$STATE_DIR" -maxdepth 1 -type f \
            \( -name 'last_stop' -o -name 'last_stop.*' \
@@ -121,20 +123,38 @@ done < <(find "$STATE_DIR" -maxdepth 1 -type f \
               -o -name 'cache-keepalive.log' -o -name 'cache-keepalive.*.log' \
               -o -name '*.count' \) 2>/dev/null)
 
-if [ "$found" -gt 0 ]; then
+if [ "$staged" -gt 0 ]; then
+  archived=0
   for dd in "$stage_root"/*/; do
     [ -d "$dd" ] || continue
     d="$(basename "$dd")"
     arch="$ARCHIVE_DIR/cache-keepalive-$d.tar.gz"
-    # merge into an existing bucket archive, if any
-    [ -f "$arch" ] && tar -xzf "$arch" -C "$dd" 2>/dev/null || true
-    if tar -czf "$arch" -C "$dd" . 2>/dev/null; then
+    src="$dd"
+    # merge into an existing bucket archive, if any: unpack it separately and
+    # lay the newly staged files on top, so an older archived copy of a file
+    # never replaces the newer one
+    if [ -f "$arch" ]; then
+      src="$stage_root/.merge/$d"
+      mkdir -p "$src" 2>/dev/null || continue
+      if ! tar -xzf "$arch" -C "$src" 2>/dev/null; then
+        log "ERROR: cannot read $arch; leaving its files in place"
+        continue
+      fi
+      cp -pR "$dd". "$src"/ 2>/dev/null || continue
+    fi
+    # write beside the old archive and swap, so a failed write keeps it intact
+    if tar -czf "$arch.tmp" -C "$src" . 2>/dev/null && mv -f "$arch.tmp" "$arch" 2>/dev/null; then
+      while IFS= read -r f; do
+        rm -f "$f"
+        archived=$((archived + 1))
+      done < "$stage_root/$d.list"
       log "archived $d -> $arch"
     else
-      log "ERROR: failed to write $arch"
+      rm -f "$arch.tmp" 2>/dev/null
+      log "ERROR: failed to write $arch; leaving its files in place"
     fi
   done
-  log "housekeep done: archived $found file(s), retention=${RETENTION_DAYS}d"
+  log "housekeep done: archived $archived of $staged file(s), retention=${RETENTION_DAYS}d"
 fi
 
 # ---- 3) prune old archives ---------------------------------------------
