@@ -7,8 +7,10 @@
 <a href="test.sh"><img alt="tests: 60 passing" src="https://img.shields.io/badge/tests-60%20passing-brightgreen"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6E56CF">
 <img alt="Requires the Monitor tool" src="https://img.shields.io/badge/requires-Monitor%20tool-orange">
-<a href="https://linux.do"><img alt="community: LINUX DO" src="https://img.shields.io/badge/community-LINUX%20DO-1f6feb"></a>
 </p>
+
+> Maintained by [JillVernus](https://github.com/JillVernus). Originally created by
+> [demouo](https://github.com/demouo/claude-code-cache-keepalive), who has stepped back from maintenance.
 
 **Keep Claude Code's prompt cache warm across idle pauses — without freezing your terminal.**
 
@@ -171,16 +173,16 @@ break-even math: [docs/COST.md](docs/COST.md).
 ## Install
 
 ```
-/plugin marketplace add demouo/claude-code-cache-keepalive
-/plugin install cache-keepalive@claude-cache-tools
+/plugin marketplace add JillVernus/claude-code-cache-keepalive
+/plugin install cache-keepalive@jillvernus-plugins
 ```
 
 Non-interactively:
 
 ```bash
-git clone https://github.com/demouo/claude-code-cache-keepalive.git
+git clone https://github.com/JillVernus/claude-code-cache-keepalive.git
 claude plugin marketplace add ./claude-code-cache-keepalive
-claude plugin install cache-keepalive@claude-cache-tools
+claude plugin install cache-keepalive@jillvernus-plugins
 claude plugin list
 ```
 
@@ -370,10 +372,6 @@ rm -rf ~/.claude/cache-keepalive          # optional: also drop state + logs
 * **Aider `--cache-keepalive-pings`**, **Cache-Refresh-SillyTavern**, and
   **cline/cline#414** — the same "a cache read refreshes the TTL" trick, in
   other tools.
-
-## Friends
-
-* [LINUX DO](https://linux.do) — an open, friendly Chinese-language tech community.
 
 ## License
 

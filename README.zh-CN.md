@@ -7,8 +7,10 @@
 <a href="test.sh"><img alt="tests: 60 passing" src="https://img.shields.io/badge/tests-60%20passing-brightgreen"></a>
 <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-6E56CF">
 <img alt="requires Monitor tool" src="https://img.shields.io/badge/requires-Monitor%20tool-orange">
-<a href="https://linux.do"><img alt="community: LINUX DO" src="https://img.shields.io/badge/community-LINUX%20DO-1f6feb"></a>
 </p>
+
+> 由 [JillVernus](https://github.com/JillVernus) 维护。项目最初由
+> [demouo](https://github.com/demouo/claude-code-cache-keepalive) 创建，原作者已不再维护。
 
 **给 Claude Code 的 prompt cache 保温，又不至于卡住你的终端。**
 
@@ -90,16 +92,16 @@ OpenRouter、自建代理、各类 Anthropic 兼容网关都可以——**只要
 **装成插件，Monitor 自动启动**
 
 ```
-/plugin marketplace add demouo/claude-code-cache-keepalive
-/plugin install cache-keepalive@claude-cache-tools
+/plugin marketplace add JillVernus/claude-code-cache-keepalive
+/plugin install cache-keepalive@jillvernus-plugins
 ```
 
 非交互式：
 
 ```bash
-git clone https://github.com/demouo/claude-code-cache-keepalive.git
+git clone https://github.com/JillVernus/claude-code-cache-keepalive.git
 claude plugin marketplace add ./claude-code-cache-keepalive
-claude plugin install cache-keepalive@claude-cache-tools
+claude plugin install cache-keepalive@jillvernus-plugins
 ```
 
 插件自带 `monitors/monitors.json`（`"when": "always"`），会话一开 Monitor 就会自己起来。
@@ -210,10 +212,6 @@ rm -rf ~/.claude/cache-keepalive          # 可选：连状态和日志一起删
   终端、受 8 次 block 限制，一次最多只覆盖约 30 分钟。
 - Aider 的 `--cache-keepalive-pings`、Cache-Refresh-SillyTavern、cline/cline#414
   —— 同一个"读缓存就会续 TTL"的思路，出现在别的工具里。
-
-## 友链
-
-* [LINUX DO](https://linux.do) —— 一个开放、友善的中文技术社区。
 
 ## License
 

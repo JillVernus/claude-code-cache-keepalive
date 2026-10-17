@@ -1,9 +1,9 @@
 {
-  "name": "claude-cache-tools",
+  "name": "jillvernus-plugins",
   "owner": {
-    "name": "demouo"
+    "name": "JillVernus"
   },
-  "description": "Tools for managing Claude Code's prompt cache and TTL",
+  "description": "JillVernus's Claude Code plugins",
   "plugins": [
     {
       "name": "cache-keepalive",

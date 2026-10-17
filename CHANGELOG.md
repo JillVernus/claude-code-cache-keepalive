@@ -3,6 +3,31 @@
 All notable changes to this project are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.0.2] — new maintainer, new marketplace
+
+### Changed
+- Maintenance moved to
+  [JillVernus/claude-code-cache-keepalive](https://github.com/JillVernus/claude-code-cache-keepalive).
+  The marketplace is renamed from `claude-cache-tools` to `jillvernus-plugins`,
+  and `plugin.json` now points its author, homepage, and repository at the new
+  repo. No runtime changes.
+- The READMEs credit the original author and name the new maintainer.
+- `LICENSE` adds a copyright line for the new maintainer; the original notice
+  is kept.
+
+### Removed
+- The LINUX DO community badge and the Friends section from both READMEs.
+
+### Migrating from the original marketplace
+Remove the old install first, or both copies run their hooks and Monitors:
+
+```
+/plugin uninstall cache-keepalive@claude-cache-tools
+/plugin marketplace remove claude-cache-tools
+/plugin marketplace add JillVernus/claude-code-cache-keepalive
+/plugin install cache-keepalive@jillvernus-plugins
+```
+
 ## [3.0.1] — drop leftover references to removed skills
 
 ### Fixed
